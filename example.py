@@ -14,15 +14,21 @@ from pathlib import Path
 from fairscale.nn.model_parallel.initialize import initialize_model_parallel
 
 from llama import ModelArgs, Transformer, Tokenizer, LLaMA
-
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['PYTORCH_NO_CUDA_MEMORY_CACHING'] = '1'
 
 def setup_model_parallel() -> Tuple[int, int]:
     local_rank = int(os.environ.get("LOCAL_RANK", -1))
     world_size = int(os.environ.get("WORLD_SIZE", -1))
 
-    torch.distributed.init_process_group("nccl")
+    #torch.distributed.init_process_group("nccl")
+    torch.distributed.init_process_group("gloo")
     initialize_model_parallel(world_size)
-    torch.cuda.set_device(local_rank)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+    #torch.cuda.set_device(local_rank)
+    torch.cuda.set_device(device)
+    torch.backends.max_split_size_mb = 1
 
     # seed must be the same in all processes
     torch.manual_seed(1)
@@ -68,8 +74,8 @@ def main(
     tokenizer_path: str,
     temperature: float = 0.8,
     top_p: float = 0.95,
-    max_seq_len: int = 512,
-    max_batch_size: int = 32,
+    max_seq_len: int = 128,
+    max_batch_size: int = 16,
 ):
     local_rank, world_size = setup_model_parallel()
     if local_rank > 0:
@@ -106,8 +112,14 @@ plush girafe => girafe peluche
 
 cheese =>""",
     ]
+    prompts = [
+        # For these prompts, the expected answer is the natural continuation of the prompt
+        "The ESCO (European Skills, Competences, Qualifications and Occupations) is",
+        "If I am good at mathematics the following jobs would be suitable for me:",
+        "The ESCO concept url for a teacher is:"
+    ]
     results = generator.generate(
-        prompts, max_gen_len=256, temperature=temperature, top_p=top_p
+        prompts, max_gen_len=128, temperature=temperature, top_p=top_p
     )
 
     for result in results:
